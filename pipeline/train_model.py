@@ -4,8 +4,10 @@ from kfp.components import InputPath, OutputPath
 def train_model(input_path: InputPath(), output_path: OutputPath()):
     import numpy as np
     import pandas as pd
-    from keras.models import Sequential
-    from keras.layers import Dense, Dropout, BatchNormalization, Activation
+    import datetime
+    import tensorflow as tf
+    from tensorflow.keras.models import Sequential
+    from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Activation
     from sklearn.model_selection import train_test_split
     from sklearn.preprocessing import StandardScaler
     from sklearn.utils import class_weight
@@ -13,6 +15,8 @@ def train_model(input_path: InputPath(), output_path: OutputPath()):
     import onnx
     import pickle
     from pathlib import Path
+    import os
+    os.environ["KERAS_BACKEND"] = "tensorflow"   # "jax"
 
     # Load the CSV data which we will use to train the model.
     # It contains the following fields:
@@ -79,13 +83,24 @@ def train_model(input_path: InputPath(), output_path: OutputPath()):
     # Train the model and get performance
 
     epochs = 2
-    history = model.fit(X_train, y_train, epochs=epochs, \
-                        validation_data=(scaler.transform(X_val.values),y_val), \
-                        verbose = True, class_weight = class_weights)
+    history = model.fit(X_train, y_train.ravel(), epochs=epochs, \
+                        validation_data=(scaler.transform(X_val.values),y_val.ravel()), \
+                        verbose=True, class_weight=class_weights)
 
     # Save the model as ONNX for easy use of ModelMesh
 
     model_proto, _ = tf2onnx.convert.from_keras(model)
     onnx.save(model_proto, output_path)
+    
+    # Save the model as ONNX for easy use of ModelMesh
+    model.output_names=['output']
+
+    input_shape = len(X.columns)
+    input_signature = [tf.TensorSpec([None, input_shape], tf.float32, name='input')]
+
+    model_proto, _ = tf2onnx.convert.from_keras(model, input_signature, opset=13)
+    os.makedirs("models/fraud", exist_ok=True)
+    # model.save('models/fraud/tf_model.keras')
+    onnx.save(model_proto, "models/fraud/model.onnx")
 
 
